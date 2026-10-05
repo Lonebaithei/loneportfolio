@@ -1,0 +1,235 @@
+// Spec §36 minimum V1 entities, plus NowEntry (spec §21: Now page editable from admin).
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// spec §13 / §54
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+// spec §14
+enum ProjectStatus {
+  IDEA
+  PLANNING
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+  ABANDONED
+}
+enum ProjectCategory {
+  DATA_ANALYTICS
+  DATA_ENGINEERING
+  DATA_SCIENCE
+  QUANT_FINANCE
+  SOFTWARE
+}
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+enum MilestoneStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+enum ResumeStatus {
+  CURRENT
+  PREVIOUS
+  DRAFT
+}
+enum SkillCategory {
+  DATA
+  ENGINEERING
+  QUANT
+  OTHER
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime      @default(now())
+  activity     ActivityLog[]
+}
+
+model Profile {
+  id          String   @id @default(cuid())
+  name        String
+  headline    String
+  summary     String?
+  location    String?
+  email       String?
+  linkedinUrl String?
+  githubUrl   String?
+  websiteUrl  String?
+  about       String?  // long-form About page body (markdown)
+  updatedAt   DateTime @updatedAt
+}
+
+model Resume {
+  id          String       @id @default(cuid())
+  filename    String
+  storageKey  String       // key in object storage; never trust the original filename
+  version     String
+  status      ResumeStatus @default(DRAFT)
+  notes       String?
+  publishedAt DateTime?
+  createdAt   DateTime     @default(now())
+  // App-level rule: at most one CURRENT resume (enforced in the server action).
+}
+
+model Education {
+  id          String    @id @default(cuid())
+  institution String
+  program     String
+  startDate   DateTime?
+  endDate     DateTime?
+  status      String?   // e.g. "In progress"
+  coursework  String[]
+  sortOrder   Int       @default(0)
+  public      Boolean   @default(true)
+}
+
+model Certification {
+  id            String    @id @default(cuid())
+  name          String
+  issuer        String
+  issuedAt      DateTime?
+  credentialId  String?
+  verifyUrl     String?
+  sortOrder     Int       @default(0)
+  public        Boolean   @default(true)
+}
+
+model Experience {
+  id           String    @id @default(cuid())
+  organization String
+  role         String
+  location     String?
+  startDate    DateTime?
+  endDate      DateTime?
+  description  String?
+  achievements String[]
+  sortOrder    Int       @default(0)
+  public       Boolean   @default(true)
+}
+
+model Skill {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  category  SkillCategory @default(OTHER)
+  sortOrder Int           @default(0)
+  public    Boolean       @default(true)
+  projects  Project[]     // evidence links (spec §7 Section 4)
+}
+
+model Project {
+  id               String          @id @default(cuid())
+  title            String
+  slug             String          @unique
+  shortDescription String
+  longDescription  String?
+  category         ProjectCategory
+  status           ProjectStatus   @default(IDEA)
+  priority         Priority        @default(MEDIUM)
+  progress         Int             @default(0) // 0-100
+  startDate        DateTime?
+  targetDate       DateTime?
+  completionDate   DateTime?
+  technologies     String[]
+  // Public write-up sections (spec §17 / §20)
+  problem          String?
+  objectives       String?
+  approach         String?
+  architectureImg  String?
+  outcomes         String?
+  lessons          String?
+  repositoryUrl    String?
+  demoUrl          String?
+  documentationUrl String?
+  featured         Boolean         @default(false)
+  public           Boolean         @default(false)
+  publishStatus    ContentStatus   @default(DRAFT)
+  coverImage       String?
+  tags             String[]
+  currentMilestone String?
+  nextAction       String?
+  // PRIVATE: must never be selected by public queries (spec §20)
+  privateNotes     String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  milestones       ProjectMilestone[]
+  skills           Skill[]
+
+  @@index([status])
+  @@index([publishStatus, public])
+}
+
+model ProjectMilestone {
+  id          String          @id @default(cuid())
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      MilestoneStatus @default(TODO)
+  priority    Priority        @default(MEDIUM)
+  dueDate     DateTime?
+  completedAt DateTime?
+  sortOrder   Int             @default(0)
+}
+
+model ResearchPost {
+  id          String        @id @default(cuid())
+  title       String
+  slug        String        @unique
+  summary     String
+  content     String
+  category    String
+  tags        String[]
+  status      ContentStatus @default(DRAFT)
+  featured    Boolean       @default(false)
+  publishedAt DateTime?
+  updatedAt   DateTime      @updatedAt
+}
+
+// Spec §21. One row is "current"; older rows form the history.
+model NowEntry {
+  id                   String   @id @default(cuid())
+  currentProjects      String[]
+  currentlyLearning    String[]
+  currentlyResearching String[]
+  recentAchievement    String?
+  nextGoal             String?
+  isCurrent            Boolean  @default(true)
+  updatedAt            DateTime @updatedAt
+}
+
+model SiteSettings {
+  id              String  @id @default("singleton")
+  siteTitle       String  @default("Lone Baithei")
+  siteDescription String?
+  contactFormOn   Boolean @default(false)
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  timestamp  DateTime @default(now())
+  metadata   Json?    // keep non-sensitive (spec §38)
+
+  @@index([timestamp])
+}
